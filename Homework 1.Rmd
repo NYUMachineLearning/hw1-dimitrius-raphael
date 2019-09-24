@@ -1,0 +1,213 @@
+---
+title: "Homework 1 Machine Learning"
+output: html_notebook
+---
+## Homework
+
+0. Subset the Iris dataset to only include `Sepal.Length`, `Sepal.Width`, `Petal.Length`, and `Petal.Width`. 
+
+1. Write out the Kmeans algorithm by hand, and run two iterations of it. 
+
+2. Run PCA on the Iris dataset. Plot a scatter plot of PC1 vs PC2 and include the percent variance those PCs describe. 
+
+3. Run ICA on the Iris dataset. Plot the independent components as a heatmap.
+
+4. Use Kmeans to cluster the Iris data. 
+  * Use the silhouette function in the cluster package to find the optimal number of clusters for kmeans for the iris dataset. Then cluster using kmeans clustering. Does the data cluster by species? 
+  * Using this clustering, color the PCA plot according to the clusters.
+  
+5. Use hierarchical clustering to cluster the Iris data.
+
+  * Try two different linkage types, and two different distance metrics. 
+  * For one linkage type and one distance metric, try two different cut points. 
+  * Using this clustering, color the PCA plot according to the clusters. (6  plots in total)
+
+#Question 1: Kmeans algorithm by hand
+
+
+```{r}
+#First must create a function to calculate square euclidean distance and produce a distance matrix 
+euclidean_dist <- function(pt1, pt2) {
+  Dist_Mat <- matrix(NA, nrow=dim(pt1)[1], ncol=dim(pt2)[1])
+  for(i in 1:nrow(pt2)) {
+    Dist_Mat[,i] <- sqrt(rowSums(t(t(pt1)-pt2[i,])^2))
+  }
+  Dist_Mat
+}
+
+
+#The k means algorithm as a function. This takes the dataset, a randomised subset of data from the iris dataset, euclidean distance matrix from abovfe, and number of iterations wanted in order to cluster the data based on minimal distance between centroids.
+K_means <- function(data, centers, euclidean_dist, Iterations) {
+  Total_clust <- vector(Iterations, mode="list")
+  Total_Cent <- vector(Iterations, mode="list")
+
+  for(i in 1:Iterations) {
+    Dist_Centers <- euclidean_dist(data, centers)
+    clusters <- apply(Dist_Centers, 1, which.min)
+    centers <- apply(data, 2, tapply, clusters, mean)
+    # Saving history
+    Total_clust[[i]] <- clusters
+    Total_Cent[[i]] <- centers
+  }
+
+  structure(list(clusters = Total_clust, centers = Total_Cent))
+
+}
+
+centers <- iris_subset[sample(nrow(iris_subset),3),]
+
+iris_clusters <- K_means(as.matrix(iris_subset), as.matrix(centers), euclid, 3)
+
+#First three iterations shown
+iris_clusters[[2]]
+```
+
+
+
+#Question 2: PCA
+```{r}
+#First, must center the data
+iris_subset_pca <- data.matrix(iris_subset)
+
+Center_iris <- apply(iris_subset_pca, 2, function(x) x - mean(x))
+
+#Calculate the covariance matrix
+
+Covariance_iris <- cov(Center_iris)
+
+#Calculate eigenvectors
+
+Eigen_value_iris <- eigen(Covariance_iris)$value
+
+#columns are the eigen vectors
+Eigen_vector_iris <- eigen(Covariance_iris)$vector
+
+#Multiply eigen vector matrix by original data
+PC <- as.data.frame(data.matrix(Center_iris) %*% Eigen_vector_iris)
+
+ggplot(PC, aes(PC[,1], PC[,2]), color= iris_species) + geom_point(aes(PC[,1], PC[,2]))
+
+round(cumsum(Eigen_value_iris)/sum(Eigen_value_iris) * 100, digits = 2)
+```
+Same method using prcomp function
+```{r}
+autoplot(prcomp(iris_subset_pca), data = iris, colour="Species")
+
+#This shows that Principal Component 1 and Principal Component 2 explain 97.77% of the variance within the iris dataset
+```
+
+#Question 3: ICA
+
+```{r}
+#Use fastICA in order to run ICA on Iris dataset
+a <- fastICA(iris_subset, 7, alg.typ = "parallel", fun = "logcosh", alpha = 1,
+             method = "R", row.norm = FALSE, maxit = 200,
+             tol = 0.0001, verbose = TRUE,)
+
+#Plot the the independent components as a heatmap
+
+heatmap(a$S)
+```
+
+#Question 4: Kmeans to cluster dataset
+```{r}
+#install.packages("factoextra")
+#install.packages("NbClust")
+library(factoextra)
+library(NbClust)
+library(cluster)
+
+set.seed(123)
+#Perform silhouette method of finding optimal number of clusters for kmeans
+
+fviz_nbclust(iris_subset, kmeans, method = "silhouette")
+
+#2 clusters is found to be optimal
+
+kmeans_iris <- kmeans(iris_subset, 2, nstart = 25)
+print(kmeans_iris)
+
+autoplot(prcomp(iris_subset_pca), colour=kmeans_iris$cluster)
+
+```
+
+
+#Question 5: Hierarchial Clustering
+
+```{r}
+#Hierarchical clustering using Euclidean distance
+hierarchical_dist1 <- dist(iris_subset, method = "euclidean")
+tree1 <- hclust(hierarchical_dist1, method="average")
+plot(tree1)
+
+#Try two different cut points
+tree_k1 <- cutree(tree1, k = 2)
+tree_k1
+rect.hclust(tree1, k = 3, h = NULL)
+
+iris_data_tree1 <- mutate(iris_subset, cluster=tree_k1)
+count(iris_data_tree1, cluster)
+
+autoplot(prcomp(iris_subset_pca), colour=iris_data_tree1$cluster)
+
+#Test another test point for the same distance metrix (euclidean)
+
+tree_k1.5 <- cutree(tree1, k = 3)
+tree_k1.5
+rect.hclust(tree1, k = 4, h = NULL)
+
+iris_data_tree1.5 <- mutate(iris_subset, cluster=tree_k1.5)
+
+autoplot(prcomp(iris_subset_pca), colour=iris_data_tree1.5$cluster)
+
+#Hierarchical clustering using Manhattan distance
+hierarchical_dist2 <- dist(iris_subset, method = "manhattan")
+tree2 <- hclust(hierarchical_dist2, method="average")
+plot(tree2)
+tree_k2 <- cutree(tree2, k = 3)
+tree_k2
+rect.hclust(tree2, k = 4, h = NULL)
+
+iris_data_tree2 <- mutate(iris_subset, cluster=tree_k2)
+autoplot(prcomp(iris_subset_pca), colour=iris_data_tree2$cluster)
+
+#Hierarchial clustering using Centroid linkage
+hierarchical_dist3 <- dist(iris_subset, method = "euclidean")
+tree3 <- hclust(hierarchical_dist3, method="centroid")
+plot(tree3)
+
+#Must test two different cutpoints for the same linkage type (centroid)
+
+tree3 <- hclust(hierarchical_dist3, method="centroid")
+plot(tree3)
+tree_k3 <- cutree(tree1, k = 3)
+tree_k3
+rect.hclust(tree1, k = 4, h = NULL)
+
+iris_data_tree3 <- mutate(iris_subset, cluster=tree_k3)
+count(iris_data_tree3, cluster)
+
+autoplot(prcomp(iris_subset_pca), colour=iris_data_tree3$cluster)
+
+tree_k3.5 <- cutree(tree1, k = 2)
+tree_k3.5
+rect.hclust(tree1, k = 3, h = NULL)
+
+iris_data_tree3.5 <- mutate(iris_subset, cluster=tree_k3.5)
+autoplot(prcomp(iris_subset_pca), colour=iris_data_tree3.5$cluster)
+#Hierarchial clustering using Single linkage
+hierarchical_dist4 <- dist(iris_subset, method = "euclidean")
+tree4 <- hclust(hierarchical_dist4, method="single")
+plot(tree4)
+
+tree_k4 <- cutree(tree4, k = 3)
+tree_k4
+rect.hclust(tree4, k = 4, h = NULL)
+
+iris_data_tree4 <- mutate(iris_subset, cluster=tree_k4)
+count(iris_data_tree4, cluster)
+
+autoplot(prcomp(iris_subset_pca), colour=iris_data_tree4$cluster)
+```
+
+
